@@ -1,12 +1,12 @@
 import functools
 import gevent
 
-from .base import Runner as _Runner
-from ..edge.redis import RedisEdge as _RedisEdge
-from ..exceptions import RunnerExecutionError
+from .base import AbstractRemoteRunner
+from ..edge.redis import RedisEdge
+from ...exceptions import RunnerExecutionError
 
 
-class GeventEdge(_RedisEdge):
+class GeventEdge(RedisEdge):
 
     def _pre_poll(self):
         # We want to avoid blocking so we sleep at the beginning of each edge
@@ -21,7 +21,9 @@ class GeventEdge(_RedisEdge):
             gevent.sleep(0.001)
 
 
-class GeventRunner(_Runner):
+class GeventRunner(AbstractRemoteRunner):
+
+    DEFAULT_EDGE = GeventEdge
 
     def execute(self):
         errors = {}
@@ -32,7 +34,6 @@ class GeventRunner(_Runner):
 
         greenlets = []
         for node in self.nodes:
-            node.set_default_edge(GeventEdge)
             greenlet = gevent.spawn(node)
             greenlet.rawlink(functools.partial(_check_error, node))
             greenlets.append(greenlet)

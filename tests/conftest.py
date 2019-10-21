@@ -1,23 +1,41 @@
 import os
 import time
+import collections
 import subprocess
 import pytest
 
-import flo.runners.multiproc
-import flo.runners.futures
+import flo.engine.runners.local
+import flo.engine.runners.multiproc
+import flo.engine.edge.local
+import flo.engine.edge.redis
 
 
-_RUNNERS = [
-    flo.runners.multiproc.SubProcessRunner,
-    flo.runners.futures.ThreadPoolRunner,
-]
-
+_SUPPORTED = {
+    flo.engine.runners.local.LocalRunner: [
+        flo.engine.edge.local.InMemoryEdge,
+        flo.engine.edge.redis.RedisEdge,
+    ],
+    flo.engine.runners.multiproc.SubProcessRunner: [
+        flo.engine.edge.redis.RedisEdge,
+    ],
+}
 
 try:
-    import flo.runners.gevent
-    _RUNNERS.append(flo.runners.gevent.GeventRunner)
+    import flo.engine.runners.gevent
+    _SUPPORTED[flo.engine.runners.gevent.GeventRunner] = [
+        flo.engine.runners.gevent.GeventEdge,
+    ]
 except ImportError:
     pass
+
+
+_ALL_RUNNERS = {}
+_COMPAT = collections.defaultdict(list)
+for runner, edges in _SUPPORTED.items():
+    for edge in edges:
+        _ALL_RUNNERS['{}({})'.format(runner.__name__, edge.__name__)] = \
+            (runner, edge)
+        _COMPAT[edge].append(runner)
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -60,6 +78,7 @@ def docker_redis():
             time.sleep(1)
             tries -= 1
 
+        time.sleep(3)
         yield
 
     finally:
@@ -78,16 +97,13 @@ def rlimit():
     resource.setrlimit(resource.RLIMIT_NOFILE, (2000, -1))
 
 
-@pytest.fixture
-def all_runners():
-    return _RUNNERS
+@pytest.fixture(ids=_ALL_RUNNERS.keys(), params=_ALL_RUNNERS.values())
+def runner(request):
+    runner, edge = request.param
+    yield runner(edge=edge)
 
 
-@pytest.fixture(params=_RUNNERS)
-def runner_cls(request):
-    yield request.param
-
-
-@pytest.fixture
-def runner(runner_cls):
-    yield runner_cls()
+@pytest.fixture(params=_COMPAT.keys())
+def runners_by_edge(request):
+    edge = request.param
+    yield [x(edge=edge) for x in _COMPAT[edge]]

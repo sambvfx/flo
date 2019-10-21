@@ -1,8 +1,15 @@
-import multiprocessing
-import traceback
+from tblib import pickling_support
+pickling_support.install()
 
-from .base import Runner as _Runner
-from ..exceptions import RunnerExecutionError
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
+import multiprocessing
+
+from .base import AbstractRemoteRunner
+from ...exceptions import RunnerExecutionError
 
 
 class Process(multiprocessing.Process):
@@ -16,17 +23,19 @@ class Process(multiprocessing.Process):
             multiprocessing.Process.run(self)
             self._cconn.send(None)
         except Exception as e:
-            tb = traceback.format_exc()
-            self._cconn.send((e, tb))
+            self._cconn.send(
+                pickle.dumps(e, protocol=pickle.HIGHEST_PROTOCOL))
 
     @property
     def exception(self):
         if self._pconn.poll():
-            self._exception = self._pconn.recv()
+            e = self._pconn.recv()
+            if e is not None:
+                self._exception = pickle.loads(e)
         return self._exception
 
 
-class SubProcessRunner(_Runner):
+class SubProcessRunner(AbstractRemoteRunner):
 
     def execute(self):
         results = {}
@@ -41,6 +50,6 @@ class SubProcessRunner(_Runner):
         for node, proc in results.items():
             e = proc.exception
             if e:
-                errors[node] = e[0]
+                errors[node] = e
         if errors:
             raise RunnerExecutionError(self, errors)

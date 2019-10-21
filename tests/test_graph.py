@@ -1,7 +1,6 @@
 import pytest
 import typing
 import multiprocessing
-import random
 
 import flo.api
 import flo.exceptions
@@ -88,7 +87,7 @@ def test_timeout(runner):
     l2 = g.add(sleep).init(inflow=l1['outflow'], duration=0.5)
 
     with pytest.raises(TimeoutError):
-        g.submit(timeout=0.2)
+        g.submit(timeout=0.1)
 
 
 def test_error(runner):
@@ -136,7 +135,8 @@ def test_many_nodes(num_nodes, runner):
     assert expected == result
 
 
-def test_multi_runners(all_runners):
+def test_multi_runners(runners_by_edge):
+    import itertools
 
     def init(arg: int, outflow: flo.api.Out[int]):
         for i in range(arg):
@@ -161,18 +161,11 @@ def test_multi_runners(all_runners):
         for i in inflow:
             state.put(i)
 
-    runner1 = all_runners[0]()
-    try:
-        runner2 = all_runners[1]()
-    except IndexError:
-        runner2 = all_runners[0]()
-    try:
-        runner3 = all_runners[2]()
-    except IndexError:
-        try:
-            runner3 = all_runners[1]()
-        except IndexError:
-            runner3 = all_runners[0]()
+    _irun = itertools.cycle(runners_by_edge)
+
+    runner1 = next(_irun)
+    runner2 = next(_irun)
+    runner3 = next(_irun)
 
     g = flo.api.Graph()
 
@@ -194,6 +187,7 @@ def test_multi_runners(all_runners):
         .set_runner(runner2) \
         .init(inflow=(l2['outflow'], r2['outflow']))
     n4 = g.add(capture) \
+        .set_runner(runner3) \
         .init(inflow=n3['outflow'])
 
     graph_runners = g.get_runners()
@@ -201,17 +195,16 @@ def test_multi_runners(all_runners):
     runner_nodes = []
     for runner in graph_runners:
         runner_nodes.extend(runner.nodes)
+
     assert len(runner_nodes) == 6
-
-    assert len(graph_runners) == 4
-
-    assert len(runner1.nodes) == 2
-    assert len(runner2.nodes) == 2
-    assert len(runner3.nodes) == 1
 
     g.submit()
 
-    expected = sorted(list(range(10)) + list(range(5)))
-    result = sorted(state.get() for _ in expected)
+    expected = list(range(10)) + list(range(5))
 
-    assert expected == result
+    result = []
+    while not state.empty():
+        result.append(state.get())
+
+    # order not guaranteed
+    assert sorted(expected) == sorted(result)

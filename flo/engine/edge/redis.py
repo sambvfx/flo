@@ -5,7 +5,7 @@ import threading
 
 import redis
 
-import flo.edge.base
+from .base import AbstractRemoteEdge
 
 
 class _ClientManager(object):
@@ -14,7 +14,7 @@ class _ClientManager(object):
     DEFAULT_DB = 0
 
     REDIS_URL_REGEX = re.compile(
-        r'(?P<host>[^:]+)(:(?P<port>[0-9]*))?(/(?P<db>0-9+))?')
+        r'(?P<host>[^:]+)(:(?P<port>[0-9]+))?(/(?P<db>[0-9]+))?')
 
     _lock = threading.Lock()
 
@@ -63,7 +63,7 @@ def deserialize(data):
     return pickle.loads(data)
 
 
-class RedisEdge(flo.edge.base.StateEdge):
+class RedisEdge(AbstractRemoteEdge):
 
     lock = threading.RLock()
 

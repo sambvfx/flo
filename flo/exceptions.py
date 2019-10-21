@@ -9,6 +9,10 @@ class UniqueNodeError(FloError):
     pass
 
 
+class RunnerCompatibilityError(Exception):
+    pass
+
+
 class RunnerExecutionError(FloError):
     def __init__(self, runner, errors):
         msg = ['Errors in {!r} execution:'.format(runner)]

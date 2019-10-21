@@ -11,6 +11,11 @@ ipdb = "*"
 [packages]
 typing = "*"
 redis = "*"
+e1839a8 = {editable = true,path = "."}
+flo = {editable = true,path = "."}
+tblib = "*"
+six = "*"
+dill = "*"
 
 [requires]
 python_version = "3.7"

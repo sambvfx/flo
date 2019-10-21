@@ -3,16 +3,23 @@ from __future__ import annotations
 import uuid
 import typing
 
+import dill
+
+from .engine.runners.local import LocalRunner
+from .engine.runners.utils import compatible
 from .exceptions import UniqueNodeError, GraphExecutionError
 
+
 if typing.TYPE_CHECKING:
+    from .engine.runners.base import AbstractRunner
     from typing import *
-    from .edge.base import Edge
-    from .runners.base import Runner
 
 
 NoneType = type(None)
 T = typing.TypeVar('T')
+
+
+DEFAULT_RUNNER = LocalRunner()
 
 
 class _BasePort(object):
@@ -65,11 +72,11 @@ def validate_types(left, right):
 
 class Node(object):
 
-    def __init__(self, fn, id_=None):
-        if id_ is None:
-            id_ = fn.__name__
-        self.id = id_
+    def __init__(self, fn, name=None):
+        if name is None:
+            name = fn.__name__
 
+        self.id = name
         self.fn = fn
 
         self.inports = {}
@@ -82,10 +89,30 @@ class Node(object):
                     self.outports[k] = v('/'.join((self.id, k)), v.__args__[0])
 
         self.initializations = {}
-
-        self._edge = None
-        self._default_edge = None
         self._runner = None
+
+    @property
+    def name(self):
+        return self.id
+
+    def __getstate__(self):
+        return (
+            self.id,
+            dill.dumps(self.fn),
+            dill.dumps(self.inports),
+            dill.dumps(self.outports),
+            dill.dumps(self.initializations),
+            dill.dumps(self._runner)
+        )
+
+    def __setstate__(self, state):
+        id_, fn, inports, outports, initializations, runner = state
+        self.id = id_
+        self.fn = dill.loads(inports)
+        self.inports = dill.loads(inports)
+        self.outports = dill.loads(outports)
+        self.initializations = dill.loads(initializations)
+        self._runner = dill.loads(runner)
 
     def __repr__(self):
         # <Node[fn1](fn(foo='bar'))>
@@ -102,7 +129,7 @@ class Node(object):
     def get_kwargs(self):
         kwargs = self.initializations.copy()
 
-        edge = self.get_edge()
+        runner = self.runner or DEFAULT_RUNNER
 
         # add edges to in/out ports
         for name, port in self.inports.items():
@@ -112,10 +139,10 @@ class Node(object):
                 pass
             else:
                 assert isinstance(connection, Connection)
-                port.edge = edge(*(x.id for x in connection))
+                port.edge = runner.edge(*(x.id for x in connection))
             kwargs[name] = port
         for name, port in self.outports.items():
-            port.edge = edge(port.id)
+            port.edge = runner.edge(port.id)
             kwargs[name] = port
 
         return kwargs
@@ -186,49 +213,29 @@ class Node(object):
                         'Cannot provide static values to ports.')
         return self
 
-    def set_edge(self, value: Type[Edge]):
-        self._edge = value
-        return self
-
-    def set_default_edge(
+    def set_runner(
             self,
-            value: Type[Edge],
-            ) -> Node:
-        """
-        Set the default Edge class for the in/out ports to use if nothing gets
-        set for this node.
-        """
-        self._default_edge = value
-        return self
-
-    def get_edge(
-            self,
-            default: Optional[Type[Edge]] = None,
-            ) -> Type[Edge]:
-        """
-        Get the Edge class for the in/out ports.
-        """
-        if self._edge is not None:
-            return self._edge
-
-        if default is None:
-            default = self._default_edge
-        if default is None:
-            import flo.edge.redis
-            return flo.edge.redis.RedisEdge
-        return default
-
-    def set_runner(self, value: Runner):
+            value: AbstractRunner,
+    ):
         self._runner = value
         return self
 
-    def get_runner(self):
+    @property
+    def runner(self):
         return self._runner
+
+    @runner.setter
+    def runner(self, value):
+        self._runner = value
 
 
 class Graph(object):
 
-    def __init__(self, id_=None, default_runner: Optional[Runner] = None):
+    def __init__(
+            self,
+            id_=None,
+            default_runner: Optional[AbstractRunner] = None,
+    ):
         self.id = id_ or str(uuid.uuid4())
         self.nodes = {}
         self._default_runner = default_runner
@@ -236,7 +243,10 @@ class Graph(object):
     def __repr__(self):
         return '<{}({!r})>'.format(self.__class__.__name__, self.id)
 
-    def _get_unique_node_name(self, fn: Callable):
+    def _get_unique_node_name(
+            self,
+            fn: Callable,
+    ):
         i = 1
         while True:
             nodeid = '{}{}'.format(fn.__name__, i)
@@ -244,7 +254,11 @@ class Graph(object):
                 return nodeid
             i += 1
 
-    def add(self, fn: Callable, nodeid: Optional[str] = None):
+    def add(
+            self,
+            fn: Callable,
+            nodeid: Optional[str] = None,
+    ):
         if nodeid is None:
             nodeid = self._get_unique_node_name(fn)
         if nodeid in self.nodes:
@@ -260,21 +274,23 @@ class Graph(object):
 
         results = []
 
-        default_runner = self._default_runner
-        if default_runner is None:
-            import flo.runners.futures
-            default_runner = flo.runners.futures.ThreadPoolRunner()
+        default_runner = self._default_runner or DEFAULT_RUNNER
 
         for node in self.nodes.values():
             node.validate()
-            runner = node.get_runner() or default_runner
+            runner = node.runner or default_runner
             runner.add(node)
             if runner not in results:
                 results.append(runner)
 
+        compatible(*results)
+
         return results
 
-    def submit(self, timeout: Optional[float] = None):
+    def submit(
+            self,
+            timeout: Optional[float] = None,
+    ):
         from concurrent.futures import ThreadPoolExecutor, wait
 
         runners = self.get_runners()
