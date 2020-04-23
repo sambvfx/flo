@@ -1,6 +1,8 @@
 """
 """
 from __future__ import absolute_import, print_function
+from tblib import pickling_support
+pickling_support.install()
 
 
 __version__ = '0.0.1'

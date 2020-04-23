@@ -1,12 +1,13 @@
+from .base import AbstractRunner
 from ..edge.local import InMemoryEdge
 from ...exceptions import RunnerExecutionError
-from .base import AbstractRunner
 
 from typing import *
 
+
 if TYPE_CHECKING:
-    from ...api import Node
     from concurrent.futures import Future
+    from ...api import Node
 
 
 class LocalRunner(AbstractRunner):

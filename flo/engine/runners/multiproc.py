@@ -1,6 +1,3 @@
-from tblib import pickling_support
-pickling_support.install()
-
 try:
     import cPickle as pickle
 except ImportError:

@@ -1,7 +1,25 @@
+from .base import AbstractRunner
 from ...exceptions import RunnerCompatibilityError
 
+from typing import *
 
-def compatible(*runners):
+
+def compatible(*runners: AbstractRunner):
+    """
+    Raises an error if `runners` are not compatible with each other.
+
+    Parameters
+    ----------
+    runners : *AbstractRunner
+
+    Raises
+    ------
+    RunnerCompatibilityError
+
+    Returns
+    -------
+    None
+    """
     stack = None
     for runner in runners:
         choices = runner._edge.mro()

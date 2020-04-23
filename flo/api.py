@@ -12,6 +12,7 @@ from .exceptions import UniqueNodeError, GraphExecutionError
 
 if typing.TYPE_CHECKING:
     from .engine.runners.base import AbstractRunner
+    from .engine.edge.base import AbstractBaseEdge
     from typing import *
 
 
@@ -24,7 +25,7 @@ DEFAULT_RUNNER = LocalRunner()
 
 class _BasePort(object):
 
-    edge = None
+    edge = None  # type: AbstractBaseEdge
 
     def __init__(self, id_, type_):
         self.id = id_
